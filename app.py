@@ -6,6 +6,10 @@ import xml.etree.ElementTree as ET
 import io
 import PyPDF2
 
+# --- CARGA DE CREDENCIALES DESDE SECRETS ---
+email = st.secrets["EMAIL"]
+api_key = st.secrets["API_KEY"]
+
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
 
@@ -28,10 +32,6 @@ def check_password():
 
 if not check_password():
     st.stop()
-
-# --- CARGA DE CREDENCIALES DESDE SECRETS ---
-email = st.secrets["EMAIL"]
-api_key = st.secrets["API_KEY"]
 
 # --- INTERFAZ ---
 st.sidebar.header("Menú Principal")

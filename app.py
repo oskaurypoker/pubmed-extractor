@@ -10,9 +10,9 @@ import PyPDF2
 st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
 
 # --- CREDENCIALES ---
-st.sidebar.header("⚙️ Configuración")
-email = st.sidebar.text_input("Correo API", value="oskaury@gmail.com")
-api_key = st.sidebar.text_input("API Key", value="8a50c52b53b3524290dd952d574b7e7bab08", type="password")
+# Acceso seguro a variables de entorno
+email = st.secrets["EMAIL"]
+api_key = st.secrets["API_KEY"]
 
 menu = st.sidebar.radio(
     "Módulo:",

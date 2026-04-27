@@ -138,4 +138,4 @@ elif menu == "2. PMIDs ➔ Metadatos + PMC Full Text (.md)":
                 failed_full_text = []
                 
                 for art in articles:
-                    p = parse_article_data(
+                    p = parse_article_data(art, extract_full_text=True)

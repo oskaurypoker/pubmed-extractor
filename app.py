@@ -6,36 +6,35 @@ import xml.etree.ElementTree as ET
 import io
 import PyPDF2
 
-# --- SISTEMA DE LOGIN ---
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
+
+# --- SISTEMA DE AUTENTICACIÓN ---
 def check_password():
-    """Devuelve True si el usuario ingresó la contraseña correcta."""
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
     if not st.session_state["password_correct"]:
-        st.warning("🔒 Aplicación Privada. Por favor, identifíquese.")
-        pwd = st.text_input("Contraseña de acceso:", type="password")
+        st.title("Acceso Restringido")
+        pwd = st.text_input("Contraseña:", type="password")
         if st.button("Entrar"):
             if pwd == st.secrets["APP_PASSWORD"]:
                 st.session_state["password_correct"] = True
-                st.rerun() # Recarga la página para mostrar el contenido
+                st.rerun()
             else:
-                st.error("Contraseña incorrecta.")
+                st.error("Clave incorrecta")
         return False
     return True
 
-# Si la contraseña no es correcta, detenemos la ejecución de todo lo demás
 if not check_password():
     st.stop()
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
-
-# --- CREDENCIALES ---
-# Acceso seguro a variables de entorno
+# --- CARGA DE CREDENCIALES DESDE SECRETS ---
 email = st.secrets["EMAIL"]
 api_key = st.secrets["API_KEY"]
 
+# --- INTERFAZ ---
+st.sidebar.header("Menú Principal")
 menu = st.sidebar.radio(
     "Módulo:",
     (
@@ -46,16 +45,13 @@ menu = st.sidebar.radio(
     )
 )
 
-# Inicializar estados de sesión para evitar que los botones desaparezcan
-if 'csv_data' not in st.session_state: st.session_state.csv_data = None
-if 'md_report' not in st.session_state: st.session_state.md_report = None
-if 'md_abstracts' not in st.session_state: st.session_state.md_abstracts = None
-if 'error_log' not in st.session_state: st.session_state.error_log = None
+# Inicializar estados de sesión
+for key in ['csv_data', 'md_report', 'md_abstracts', 'error_log', 'pdf_md_report']:
+    if key not in st.session_state: st.session_state[key] = None
 
-# --- FUNCIONES DE EXTRACCIÓN ---
+# --- FUNCIONES TÉCNICAS ---
 def fetch_full_text_from_pmc(pmcid):
-    Entrez.email = email
-    Entrez.api_key = api_key
+    Entrez.email, Entrez.api_key = email, api_key
     try:
         handle = Entrez.efetch(db="pmc", id=pmcid, rettype="fullxml", retmode="xml")
         xml_data = handle.read()
@@ -63,20 +59,17 @@ def fetch_full_text_from_pmc(pmcid):
         root = ET.fromstring(xml_data)
         body_parts = [p.text.strip() for body in root.iter('body') for p in body.iter('p') if p.text]
         return "\n\n".join(body_parts) if body_parts else None
-    except:
-        return None
+    except: return None
 
 def parse_article_data(article, extract_full_text=False):
     medline = article['MedlineCitation']
     article_data = medline['Article']
     pubmed_data = article['PubmedData']
     pmid = str(medline['PMID'])
-    
     title = article_data.get('ArticleTitle', 'N/A')
-    try:
-        year = article_data['Journal']['JournalIssue']['PubDate']['Year']
-    except:
-        year = "N/A"
+    
+    try: year = article_data['Journal']['JournalIssue']['PubDate']['Year']
+    except: year = "N/A"
         
     authors = [f"{a.get('LastName', '')} {a.get('Initials', '')}".strip() 
                for a in article_data.get('AuthorList', []) if isinstance(a, dict)]
@@ -101,12 +94,12 @@ def parse_article_data(article, extract_full_text=False):
 # --- LÓGICA DE MÓDULOS ---
 
 if menu == "1. Búsqueda MeSH ➔ CSV":
-    st.title("Módulo 1: Búsqueda a CSV")
+    st.title("Extracción PubMed a CSV")
     query = st.text_area("Query MeSH:", value='("Femoral Fractures"[MeSH])')
     limit = st.number_input("Límite:", 1, 1000, 100)
     
-    if st.button("Ejecutar Búsqueda"):
-        with st.spinner("Buscando..."):
+    if st.button("Buscar"):
+        with st.spinner("Procesando..."):
             Entrez.email, Entrez.api_key = email, api_key
             h = Entrez.esearch(db="pubmed", term=query, retmax=limit)
             ids = Entrez.read(h).get("IdList", [])
@@ -116,20 +109,19 @@ if menu == "1. Búsqueda MeSH ➔ CSV":
                 st.session_state.csv_data = df.to_csv(index=False).encode('utf-8')
     
     if st.session_state.csv_data:
-        st.download_button("📥 Descargar CSV", st.session_state.csv_data, "busqueda.csv", "text/csv", use_container_width=True)
+        st.download_button("📥 Descargar CSV", st.session_state.csv_data, "pubmed_search.csv", "text/csv")
 
 elif menu == "2. PMIDs ➔ Metadatos + PMC Full Text (.md)":
-    st.title("Módulo 2: Full Text & Logs")
+    st.title("Extracción Full Text (PMC)")
     pmid_in = st.text_area("PMIDs (uno por línea):")
     
-    if st.button("Procesar Full Text"):
+    if st.button("Procesar"):
         ids = [p.strip() for p in pmid_in.replace(',', '\n').split('\n') if p.strip().isdigit()]
         if ids:
-            with st.spinner("Extrayendo XML de PMC..."):
+            with st.spinner("Descargando XML de PMC..."):
                 Entrez.email, Entrez.api_key = email, api_key
                 records = Entrez.read(Entrez.efetch(db="pubmed", id=",".join(ids), retmode="xml")).get('PubmedArticle', [])
-                md = ""
-                errors = []
+                md, errors = "", []
                 for r in records:
                     p = parse_article_data(r, extract_full_text=True)
                     md += f"## {p['Titulo']}\n- PMID: {p['PMID']}\n- Abstract: {p['Abstract'] if p['Abstract'] else 'NO'}\n"
@@ -141,18 +133,18 @@ elif menu == "2. PMIDs ➔ Metadatos + PMC Full Text (.md)":
                 st.session_state.error_log = pd.DataFrame(errors).to_csv(index=False).encode('utf-8') if errors else None
 
     if st.session_state.md_report:
-        st.download_button("📥 Descargar Reporte (.md)", st.session_state.md_report, "reporte.md", use_container_width=True)
+        st.download_button("📥 Descargar Reporte (.md)", st.session_state.md_report, "full_report.md")
     if st.session_state.error_log:
-        st.download_button("⚠️ Descargar Log de Errores (CSV)", st.session_state.error_log, "errores.csv", "text/csv", use_container_width=True)
+        st.download_button("⚠️ Descargar Log de Errores", st.session_state.error_log, "failed_pmc.csv")
 
 elif menu == "3. PMIDs ➔ Solo Abstracts (.md)":
-    st.title("Módulo 3: Solo Abstracts")
-    pmid_in_abs = st.text_area("PMIDs para Abstracts:")
+    st.title("Compilación de Abstracts")
+    pmid_in_abs = st.text_area("PMIDs:")
     
-    if st.button("Generar Abstracts"):
+    if st.button("Generar"):
         ids = [p.strip() for p in pmid_in_abs.replace(',', '\n').split('\n') if p.strip().isdigit()]
         if ids:
-            with st.spinner("Descargando..."):
+            with st.spinner("Extrayendo..."):
                 Entrez.email, Entrez.api_key = email, api_key
                 records = Entrez.read(Entrez.efetch(db="pubmed", id=",".join(ids), retmode="xml")).get('PubmedArticle', [])
                 md = ""
@@ -162,51 +154,26 @@ elif menu == "3. PMIDs ➔ Solo Abstracts (.md)":
                 st.session_state.md_abstracts = md.encode('utf-8')
 
     if st.session_state.md_abstracts:
-        st.download_button("📥 Descargar Abstracts (.md)", st.session_state.md_abstracts, "abstracts.md", use_container_width=True)
-elif menu == "4. PDFs ➔ Documento Único (.md)":
-    st.title("Módulo 4: Parseo de PDFs a Markdown")
-    st.info("Extrae el texto de múltiples artículos en formato PDF y consolídalos en un documento único.")
-    
-    # Inicializar estado de sesión para este módulo si no existe
-    if 'pdf_md_report' not in st.session_state:
-        st.session_state.pdf_md_report = None
+        st.download_button("📥 Descargar Abstracts", st.session_state.md_abstracts, "abstracts.md")
 
-    uploaded_files = st.file_uploader("Cargar archivos PDF", type=["pdf"], accept_multiple_files=True)
+elif menu == "4. PDFs ➔ Documento Único (.md)":
+    st.title("Conversión PDF a Markdown")
+    uploaded_files = st.file_uploader("Cargar PDFs", type=["pdf"], accept_multiple_files=True)
     
-    if st.button("Procesar PDFs a Markdown", type="primary", use_container_width=True):
+    if st.button("Convertir"):
         if uploaded_files:
-            with st.spinner(f"Extrayendo texto de {len(uploaded_files)} documento(s)..."):
-                md_content = f"# Compilación de Artículos PDF - {datetime.date.today()}\n\n"
-                
+            with st.spinner("Extrayendo texto..."):
+                md_content = f"# Compilación PDF - {datetime.date.today()}\n\n"
                 for pdf_file in uploaded_files:
-                    md_content += f"## Documento: {pdf_file.name}\n\n"
+                    md_content += f"## {pdf_file.name}\n\n"
                     try:
                         reader = PyPDF2.PdfReader(pdf_file)
-                        text_parts = []
-                        for page in reader.pages:
-                            text = page.extract_text()
-                            if text:
-                                text_parts.append(text)
-                        
-                        if text_parts:
-                            md_content += "\n\n".join(text_parts) + "\n\n"
-                        else:
-                            md_content += "*No se detectó texto extraíble (posible documento escaneado como imagen).*\n\n"
+                        text_parts = [page.extract_text() for page in reader.pages if page.extract_text()]
+                        md_content += "\n\n".join(text_parts) + "\n\n" if text_parts else "*Sin texto extraíble.*\n\n"
                     except Exception as e:
-                        md_content += f"*Error en el parseo del archivo:* {e}\n\n"
-                        
+                        md_content += f"*Error:* {e}\n\n"
                     md_content += "---\n\n"
-                
                 st.session_state.pdf_md_report = md_content.encode('utf-8')
-        else:
-            st.warning("Ingrese al menos un archivo PDF válido.")
 
-    # Renderizado persistente del botón de descarga
     if st.session_state.pdf_md_report:
-        st.download_button(
-            label="📥 Descargar Compilación (.md)", 
-            data=st.session_state.pdf_md_report, 
-            file_name=f"pdfs_compilados_{datetime.date.today()}.md", 
-            mime="text/markdown", 
-            use_container_width=True
-        )
+        st.download_button("📥 Descargar Compilación", st.session_state.pdf_md_report, "pdf_to_md.md")

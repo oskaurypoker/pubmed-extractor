@@ -4,6 +4,7 @@ from Bio import Entrez
 import datetime
 import xml.etree.ElementTree as ET
 import io
+import PyPDF2
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
@@ -15,7 +16,12 @@ api_key = st.sidebar.text_input("API Key", value="8a50c52b53b3524290dd952d574b7e
 
 menu = st.sidebar.radio(
     "Módulo:",
-    ("1. Búsqueda MeSH ➔ CSV", "2. PMIDs ➔ Metadatos + PMC Full Text (.md)", "3. PMIDs ➔ Solo Abstracts (.md)")
+    (
+        "1. Búsqueda MeSH ➔ CSV", 
+        "2. PMIDs ➔ Metadatos + PMC Full Text (.md)", 
+        "3. PMIDs ➔ Solo Abstracts (.md)",
+        "4. PDFs ➔ Documento Único (.md)"
+    )
 )
 
 # Inicializar estados de sesión para evitar que los botones desaparezcan
@@ -135,3 +141,50 @@ elif menu == "3. PMIDs ➔ Solo Abstracts (.md)":
 
     if st.session_state.md_abstracts:
         st.download_button("📥 Descargar Abstracts (.md)", st.session_state.md_abstracts, "abstracts.md", use_container_width=True)
+elif menu == "4. PDFs ➔ Documento Único (.md)":
+    st.title("Módulo 4: Parseo de PDFs a Markdown")
+    st.info("Extrae el texto de múltiples artículos en formato PDF y consolídalos en un documento único.")
+    
+    # Inicializar estado de sesión para este módulo si no existe
+    if 'pdf_md_report' not in st.session_state:
+        st.session_state.pdf_md_report = None
+
+    uploaded_files = st.file_uploader("Cargar archivos PDF", type=["pdf"], accept_multiple_files=True)
+    
+    if st.button("Procesar PDFs a Markdown", type="primary", use_container_width=True):
+        if uploaded_files:
+            with st.spinner(f"Extrayendo texto de {len(uploaded_files)} documento(s)..."):
+                md_content = f"# Compilación de Artículos PDF - {datetime.date.today()}\n\n"
+                
+                for pdf_file in uploaded_files:
+                    md_content += f"## Documento: {pdf_file.name}\n\n"
+                    try:
+                        reader = PyPDF2.PdfReader(pdf_file)
+                        text_parts = []
+                        for page in reader.pages:
+                            text = page.extract_text()
+                            if text:
+                                text_parts.append(text)
+                        
+                        if text_parts:
+                            md_content += "\n\n".join(text_parts) + "\n\n"
+                        else:
+                            md_content += "*No se detectó texto extraíble (posible documento escaneado como imagen).*\n\n"
+                    except Exception as e:
+                        md_content += f"*Error en el parseo del archivo:* {e}\n\n"
+                        
+                    md_content += "---\n\n"
+                
+                st.session_state.pdf_md_report = md_content.encode('utf-8')
+        else:
+            st.warning("Ingrese al menos un archivo PDF válido.")
+
+    # Renderizado persistente del botón de descarga
+    if st.session_state.pdf_md_report:
+        st.download_button(
+            label="📥 Descargar Compilación (.md)", 
+            data=st.session_state.pdf_md_report, 
+            file_name=f"pdfs_compilados_{datetime.date.today()}.md", 
+            mime="text/markdown", 
+            use_container_width=True
+        )

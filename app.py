@@ -6,6 +6,28 @@ import xml.etree.ElementTree as ET
 import io
 import PyPDF2
 
+# --- SISTEMA DE LOGIN ---
+def check_password():
+    """Devuelve True si el usuario ingresó la contraseña correcta."""
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    if not st.session_state["password_correct"]:
+        st.warning("🔒 Aplicación Privada. Por favor, identifíquese.")
+        pwd = st.text_input("Contraseña de acceso:", type="password")
+        if st.button("Entrar"):
+            if pwd == st.secrets["APP_PASSWORD"]:
+                st.session_state["password_correct"] = True
+                st.rerun() # Recarga la página para mostrar el contenido
+            else:
+                st.error("Contraseña incorrecta.")
+        return False
+    return True
+
+# Si la contraseña no es correcta, detenemos la ejecución de todo lo demás
+if not check_password():
+    st.stop()
+
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
 

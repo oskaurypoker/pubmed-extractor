@@ -31,6 +31,11 @@ if not check_password():
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="PubMed Toolkit Pro", layout="centered")
 
+# --- CREDENCIALES ---
+# Acceso seguro a variables de entorno
+email = st.secrets["EMAIL"]
+api_key = st.secrets["API_KEY"]
+
 menu = st.sidebar.radio(
     "Módulo:",
     (
